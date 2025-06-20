@@ -145,6 +145,34 @@ class TrainConfig(BaseConfig):
     eval_dist = False
     K = 7 
     load_in = -1  
+    
+    # Self-supervised learning parameters
+    self_supervised: bool = False
+    augmentation_strength: float = 0.8
+    positive_pair_strategy: str = 'augmentation'  # 'augmentation' or 'temporal'
+    use_pathology_labels_for_training: bool = False  # Use labels only for validation
+    validate_against_labels: bool = True  # Compute validation metrics against ground truth
+    
+    # Visualization and analysis
+    save_embeddings: bool = True
+    compute_tsne: bool = True
+    tsne_perplexity: int = 30
+    save_prototypes: bool = True
+    
+    # VinDR specific parameters
+    vindr_data_path: str = ''
+    vindr_split: str = 'train'  # 'train', 'val', 'test'
+    vindr_pathologies: Tuple[str] = (
+        'Aortic enlargement', 'Atelectasis', 'Calcification', 'Cardiomegaly',
+        'Consolidation', 'ILD', 'Infiltration', 'Lung Opacity', 'Nodule/Mass',
+        'Other lesion', 'Pleural effusion', 'Pleural thickening', 'Pneumothorax', 'Pulmonary fibrosis'
+    )
+    
+    # Medical imaging specific
+    medical_image_format: str = 'png'  # 'png', 'dicom', 'nifti'
+    normalize_medical_images: bool = True
+    window_level: float = 0.0  # For DICOM windowing
+    window_width: float = 0.0
 
     def __post_init__(self):
         self.batch_size_eval = self.batch_size_eval or self.batch_size
@@ -267,10 +295,16 @@ class TrainConfig(BaseConfig):
     def make_dataset(self, path=None, paralell_=True, switch=False, **kwargs): 
         if self.data_name == 'Example':
             return ExampleDataset(train=True, N=17) 
-        
-
-
-                          
+        elif self.data_name == 'VinDR':
+            from dataset import VinDRChestXrayDataset
+            return VinDRChestXrayDataset(
+                data_path=self.vindr_data_path,
+                split=self.vindr_split,
+                img_size=self.img_size,
+                self_supervised=self.self_supervised,
+                augmentation_strength=self.augmentation_strength,
+                return_labels=self.validate_against_labels
+            )
         else:
             raise NotImplementedError()
 

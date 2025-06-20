@@ -1,4 +1,5 @@
 from experiment import *
+import os
 
 def ddpm():
     """
@@ -80,4 +81,100 @@ def Example_autoenc():
     conf.eval_every_samples = 10_000_000
     conf.name = 'Example_autoenc'
     return conf 
+
+
+def VinDR_SSL_autoenc_base():
+    """
+    Base configuration for self-supervised learning on VinDR chest X-rays
+    """
+    conf = autoenc_base()
+    conf.data_name = 'VinDR'
+    conf.img_size = 352  # Higher resolution for chest X-rays
+    conf.batch_size = 8  # Smaller batch size due to higher resolution
+    conf.net_ch = 64
+    
+    # Self-supervised learning settings
+    conf.self_supervised = True
+    conf.augmentation_strength = 0.3  # REDUCED from 0.8 - critical for medical imaging
+    conf.use_pathology_labels_for_training = False  # Fully self-supervised
+    conf.validate_against_labels = True  # Use labels only for validation metrics
+    
+    # Visualization settings
+    conf.compute_tsne = True
+    conf.save_embeddings = True
+    conf.tsne_perplexity = 30
+    
+    # Improved contrastive learning parameters
+    conf.alpha = 2.0  # INCREASED contrastive loss weight
+    conf.load_in = 5   # REDUCED - start contrastive learning earlier
+    conf.K = 5         # Use fewer neighbors for prediction loss
+    
+    # Higher resolution architecture
+    conf.net_ch_mult = (1, 2, 4, 8)
+    conf.net_enc_channel_mult = (1, 2, 4, 8, 8)
+    conf.net_enc_pool = 'adaptivenonzero'
+    
+    # Evaluation settings - disable frequent sampling to avoid crashes
+    conf.eval_ema_every_samples = 1_000_000  # Very infrequent
+    conf.eval_every_samples = 1_000_000  # Very infrequent
+    conf.sample_every_samples = 1_000_000  # Disable sampling during training
+    
+    conf.make_model_conf()
+    return conf
+
+
+def VinDR_SSL_352():
+    """
+    VinDR self-supervised learning at 352x352 resolution
+    """
+    conf = VinDR_SSL_autoenc_base()
+    conf.img_size = 352
+    conf.batch_size = 8
+    conf.total_samples = 1_000_000
+    conf.name = 'VinDR_SSL_352'
+    # Use current directory structure
+    conf.vindr_data_path = os.path.abspath('.')  # Current directory contains data/ folder
+    conf.vindr_split = 'train'
+    
+    # Use smaller model to avoid GroupNorm issues
+    conf.net_ch = 32  # Reduce base channels
+    conf.net_ch_mult = (1, 2, 4)  # Simpler architecture
+    conf.net_enc_channel_mult = (1, 2, 4)  # Simpler encoder
+    conf.make_model_conf()
+    
+    return conf
+
+
+def VinDR_SSL_512():
+    """
+    VinDR self-supervised learning at 512x512 resolution
+    """
+    conf = VinDR_SSL_autoenc_base()
+    conf.img_size = 512
+    conf.batch_size = 4  # Even smaller batch size for 512x512
+    conf.net_ch = 32  # Smaller model to fit in memory
+    conf.total_samples = 1_000_000
+    conf.name = 'VinDR_SSL_512'
+    # Use current directory structure
+    conf.vindr_data_path = os.path.abspath('.')  # Current directory contains data/ folder
+    conf.vindr_split = 'train'
+    
+    # Adjust model architecture for higher resolution
+    conf.net_ch_mult = (1, 2, 4, 8, 8)
+    conf.net_enc_channel_mult = (1, 2, 4, 8, 8, 8)
+    conf.make_model_conf()
+    return conf
+
+
+def VinDR_SSL_validation():
+    """
+    Configuration for validation/analysis on VinDR test set
+    """
+    conf = VinDR_SSL_352()
+    conf.vindr_split = 'test'
+    conf.name = 'VinDR_SSL_validation'
+    conf.validate_against_labels = True
+    conf.compute_tsne = True
+    conf.save_embeddings = True
+    return conf
 

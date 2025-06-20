@@ -164,39 +164,63 @@ class GaussianDiffusionBeatGans:
             terms['pred_xstart'] = p_mean_var['pred_xstart']
 
             if current_epoch >= load_in:
-                #embed the data 
+                # Self-supervised contrastive learning
                 embeddings = model.encoder(x_start)  
                 
-                shift_range, scale_range = 0.005, 2.3 
+                # Check if we have augmented pairs for self-supervised learning
+                if 'x_start_augmented' in model_kwargs:
+                    # Self-supervised: use augmented views as positive pairs
+                    x_augmented = model_kwargs['x_start_augmented']
+                    embeddings_aug = model.encoder(x_augmented)
+                    
+                    # Positive pairs: (original, augmented) views of same image
+                    batch_size = embeddings.shape[0]
+                    
+                    # Create positive and negative samples for InfoNCE loss
+                    # Positive: embeddings[i] with embeddings_aug[i] 
+                    # Negative: embeddings[i] with embeddings_aug[j] where j != i
+                    
+                    # Normalize embeddings
+                    embeddings_norm = F.normalize(embeddings, p=2, dim=1)
+                    embeddings_aug_norm = F.normalize(embeddings_aug, p=2, dim=1)
+                    
+                    # Compute similarity matrix
+                    similarity_matrix = torch.matmul(embeddings_norm, embeddings_aug_norm.T) / tau
+                    
+                    # InfoNCE loss: maximize similarity of positive pairs, minimize negative pairs
+                    # Positive pairs are on the diagonal
+                    labels_contrastive = torch.arange(batch_size).to(embeddings.device)
+                    contrastive_loss = F.cross_entropy(similarity_matrix, labels_contrastive)
+                    
+                else:
+                    # Fallback to original supervised contrastive learning
+                    shift_range, scale_range = 0.005, 2.3 
+                    batch_size = embeddings.shape[0] 
+                    
+                    # Generate random shifts and scales
+                    shifts = torch.FloatTensor(batch_size, 512).uniform_(-0.001, 0.01).to(embeddings.device)
+                    scales = torch.FloatTensor(batch_size, 512).uniform_(-2, 4).to(embeddings.device)
+                    embeddings = (embeddings + shifts) * scales
+                    
+                    # Use labels for contrastive learning (original approach)
+                    indices = torch.tensor(np.array([idx for (idx, label) in enumerate(list(self.to_cpu(labels))) if label == 1])).to(embeddings.device)
+                    neg_indices = torch.tensor(np.array([idx for (idx, label) in enumerate(list(self.to_cpu(labels))) if label != 1])).to(embeddings.device) 
+                    
+                    if len(indices) > 0 and len(neg_indices) > 0:
+                        pos = embeddings[indices]
+                        neg = embeddings[neg_indices] 
+                        contrastive_loss = - torch.log(torch.exp(self.calc_cosine(pos, pos) / tau) / torch.sum(torch.exp(self.calc_cosine(pos, neg)/tau))).mean()
+                    else:
+                        contrastive_loss = torch.tensor(0.0, device=embeddings.device)
                 
-                batch_size = embeddings.shape[0] 
-                # Generate random shifts
-                shifts = torch.FloatTensor(batch_size, 512).uniform_(-0.001, 0.01).to('cuda')
-        
-                # Generate random scales
-                scales = torch.FloatTensor(batch_size, 512).uniform_(-2, 4).to('cuda')
-                
-                # Apply shifts and scales to the input tensor
-                embeddings = (embeddings + shifts) * scales
-                
-                #select the indices appropriately 
-                indices = torch.tensor(np.array([idx for (idx, label) in enumerate(list(self.to_cpu(labels))) if label == 1])).to('cuda')
-                
-                #get the negative ones 
-                neg_indices = torch.tensor(np.array([idx for (idx, label) in enumerate(list(self.to_cpu(labels))) if label != 1])).to('cuda') 
-                
-                #get the positive and negative embeddings
-                pos = embeddings[indices]
-                neg = embeddings[neg_indices] 
-                
-                #calculate the contrastive loss        
-                contrastive_loss = - torch.log(torch.exp(self.calc_cosine(pos, pos) / tau) / torch.sum(torch.exp(self.calc_cosine(pos, neg)/tau))).mean() 
-            
-                #calculate the affinity matrix
+                # For prediction loss, use k-NN in embedding space
                 affinity_matrix = torch.exp(self.calc_cosine(embeddings, embeddings)) 
                 
-                #make a prediction 
-                pred_loss = self.calc_pred_loss(affinity_matrix, labels, K=K) * beta  
+                # If we have labels, use them for prediction loss, otherwise skip
+                if labels is not None:
+                    pred_loss = self.calc_pred_loss(affinity_matrix, labels, K=K) * beta
+                else:
+                    pred_loss = torch.tensor(0.0, device=embeddings.device)  
                          
             target_types = {  
                 ModelMeanType.eps: noise, 

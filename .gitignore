@@ -21,6 +21,17 @@ __pycache__/
 
 .vscode
 
+# DICOM files
+*.dicom
+*.dcm
+*.DCM/
+*.dicom/
+*.dcm/
+*.DCM/
+*.dicom/
+*.dcm/
+*.DCM/
+
 # Distribution / packaging
 .Python
 build/
@@ -166,6 +177,10 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+
+# Lightning logs
+lightning_logs/
+
 
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can

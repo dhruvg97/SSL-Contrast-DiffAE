@@ -234,7 +234,7 @@ class LitModel(pl.LightningModule):
     def calc_cosine(self, vec1, vec2):
         return F.normalize(vec1, p=2, dim=1) @ F.normalize(vec2, p=2, dim=1).T 
     
-    def training_epoch_end(self, outputs, gen= False, pred=True, LAWA=False, double_cond=False) -> None:
+    def on_train_epoch_end(self) -> None:
         batch_size = 17 
         
         train_loader = torch.utils.data.DataLoader(ExampleDataset(train=True, N=17), shuffle=False, batch_size=batch_size)
@@ -529,8 +529,7 @@ class LitModel(pl.LightningModule):
 
         return {'loss': loss}  
 
-    def on_train_batch_end(self, outputs, batch, batch_idx: int,
-                           dataloader_idx: int) -> None:
+    def on_train_batch_end(self, outputs, batch, batch_idx: int) -> None:
         """
         after each training step ...
         """
@@ -552,8 +551,7 @@ class LitModel(pl.LightningModule):
             self.log_sample(x_start=imgs) 
             self.evaluate_scores()
 
-    def on_before_optimizer_step(self, optimizer: Optimizer,
-                                 optimizer_idx: int) -> None:
+    def on_before_optimizer_step(self, optimizer: Optimizer) -> None:
         # fix the fp16 + clip grad norm problem with pytorch lightinng
         # this is the currently correct way to do it
         if self.conf.grad_clip > 0:
@@ -676,9 +674,11 @@ class LitModel(pl.LightningModule):
                 
             model.train()
 
-        if self.conf.sample_every_samples > 0 and is_time(
-                (self.num_samples*10), self.conf.sample_every_samples,
-                self.conf.batch_size_effective, hijack=True, epoch=self.current_epoch):
+        # Disable sampling for SSL training to avoid batch size mismatch during multi-GPU training
+        if (self.conf.sample_every_samples > 0 and 
+            is_time((self.num_samples*10), self.conf.sample_every_samples,
+                   self.conf.batch_size_effective, hijack=True, epoch=self.current_epoch) and
+            not getattr(self.conf, 'self_supervised', False)):
 
             if self.conf.train_mode.require_dataset_infer():
                 do(self.model, '', use_xstart=False)

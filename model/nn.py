@@ -101,7 +101,24 @@ def normalization(channels):
     :param channels: number of input channels.
     :return: an nn.Module for normalization.
     """
-    return GroupNorm32(min(32, channels), channels)
+    # Use a number of groups that divides evenly into the channels
+    # For medical imaging, use fewer groups to handle various channel sizes
+    if channels >= 32:
+        num_groups = 32
+    elif channels >= 16:
+        num_groups = 16
+    elif channels >= 8:
+        num_groups = 8
+    elif channels >= 4:
+        num_groups = 4
+    else:
+        num_groups = 1
+    
+    # Ensure num_groups divides evenly into channels
+    while channels % num_groups != 0:
+        num_groups -= 1
+    
+    return GroupNorm32(num_groups, channels)
 
 
 def timestep_embedding(timesteps, dim, max_period=10000):
