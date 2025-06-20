@@ -10,6 +10,7 @@ import sys
 import torch
 import argparse
 from pathlib import Path
+import numpy as np
 
 # Add current directory to path for imports
 sys.path.append(os.getcwd())
@@ -21,6 +22,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor, De
 
 
 def main():
+    # Parse command line arguments for input
     parser = argparse.ArgumentParser(description='Train SSL Contrast-DiffAE on VinDR dataset')
     parser.add_argument('--resolution', type=int, choices=[352, 512], default=352,
                        help='Image resolution (352 or 512)')
@@ -83,22 +85,28 @@ def main():
     if args.batch_size_per_gpu is not None:
         base_batch_size = args.batch_size_per_gpu
     else:
-        # Optimized batch sizes for A5000 GPUs (24GB each)
+        # OPTIMIZED batch sizes for A5000 GPUs (24GB each) - Much higher utilization
         if args.resolution == 352:
-            base_batch_size = 16 if args.gpus == 1 else 12  # 12 per GPU for 2 GPUs = 24 total
+            base_batch_size = 20  # per GPU - total batch size scales with GPU count
         else:  # 512x512
-            base_batch_size = 8 if args.gpus == 1 else 6    # 6 per GPU for 2 GPUs = 12 total
+            base_batch_size = 12  # per GPU - total batch size scales with GPU count
     
     # Set batch size per GPU (effective batch size will be base_batch_size * gpus)
     config.batch_size = base_batch_size
     config.batch_size_eval = base_batch_size
     
-    # Scale learning rate with effective batch size for multi-GPU
+    # Scale learning rate with effective batch size for multi-GPU training
+    # Use square root scaling which is more stable than linear scaling
     if args.gpus > 1:
-        config.lr = config.lr * args.gpus  # Linear scaling rule
+        # Calculate effective batch size scaling factor
+        # Square root scaling: more conservative than linear scaling  
+        lr_scale_factor = np.sqrt(args.gpus)
+        effective_batch_size = base_batch_size * args.gpus
+        
+        config.lr = config.lr * lr_scale_factor
         print(f"📈 Scaled learning rate to {config.lr:.6f} for {args.gpus} GPUs")
-    
-    effective_batch_size = base_batch_size * args.gpus
+        print(f"    Effective batch size: {effective_batch_size} (scale factor: {lr_scale_factor:.2f})")
+        print(f"    Using square root scaling for stability")
     
     print(f"\n🔧 Multi-GPU Configuration:")
     print(f"  - GPUs: {args.gpus}")
@@ -167,7 +175,7 @@ def main():
     
     # Start training
     try:
-        trainer.fit(model, ckpt_path=args.resume_from_checkpoint)
+        trainer.fit(model, ckpt_path=args.resume_from_checkpoint) #main training loop
         print("\n🎉 Training completed successfully!")
         print(f"💾 Best checkpoint: {checkpoint_callback.best_model_path}")
         
